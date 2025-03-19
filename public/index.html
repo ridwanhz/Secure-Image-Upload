@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Image Upload</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f0f2f5;
+    }
+    .center-box {
+      max-width: 400px;
+      margin: 80px auto;
+      padding: 30px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    #gallery img {
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- REGISTER PAGE -->
+<div id="registerSection" class="center-box d-none">
+  <h3 class="mb-3 text-center">Register</h3>
+  <input id="regEmail" class="form-control mb-2" placeholder="Email" />
+  <input id="regPassword" type="password" class="form-control mb-3" placeholder="Password" />
+  <button class="btn btn-primary w-100 mb-2" onclick="register()">Register</button>
+  <button class="btn btn-link w-100" onclick="showLogin()">Already have an account? Login</button>
+</div>
+
+<!-- LOGIN PAGE -->
+<div id="loginSection" class="center-box">
+  <h3 class="mb-3 text-center">Login</h3>
+  <input id="email" class="form-control mb-2" placeholder="Email" />
+  <input id="password" type="password" class="form-control mb-3" placeholder="Password" />
+  <button class="btn btn-success w-100 mb-2" onclick="login()">Login</button>
+  <button class="btn btn-link w-100" onclick="showRegister()">Create account</button>
+</div>
+
+<!-- APP PAGE -->
+<div id="appSection" class="container d-none mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Hello, <span id="userEmail"></span></h4>
+    <button class="btn btn-danger" onclick="logout()">Logout</button>
+  </div>
+
+  <div class="mb-4">
+    <label class="form-label">Upload Image</label>
+    <input type="file" id="imageInput" class="form-control" />
+    <button class="btn btn-secondary mt-2" onclick="uploadImage()">Start Upload</button>
+  </div>
+
+  <h5>Your Gallery</h5>
+  <div id="gallery" class="d-flex flex-wrap gap-3 mt-2"></div>
+</div>
+
+<script>
+  let userEmail = '';
+
+  window.onload = function () {
+    const token = localStorage.getItem('token');
+    const email = localStorage.getItem('email');
+    if (token && email) {
+      userEmail = email;
+      document.getElementById('userEmail').innerText = email;
+      toggleSection('app');
+      loadGallery();
+    } else {
+      toggleSection('login');
+    }
+  };
+
+  function toggleSection(section) {
+    document.getElementById('registerSection').classList.add('d-none');
+    document.getElementById('loginSection').classList.add('d-none');
+    document.getElementById('appSection').classList.add('d-none');
+    if (section === 'register') {
+      document.getElementById('registerSection').classList.remove('d-none');
+    } else if (section === 'login') {
+      document.getElementById('loginSection').classList.remove('d-none');
+    } else if (section === 'app') {
+      document.getElementById('appSection').classList.remove('d-none');
+    }
+  }
+
+  function showRegister() {
+    toggleSection('register');
+  }
+
+  function showLogin() {
+    toggleSection('login');
+  }
+
+  async function register() {
+    const email = document.getElementById('regEmail').value;
+    const password = document.getElementById('regPassword').value;
+
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      alert('Register successful! You can now login.');
+      document.getElementById('regEmail').value = '';
+      document.getElementById('regPassword').value = '';
+      toggleSection('login');
+    } else {
+      alert('Register failed: ' + data.error);
+    }
+  }
+
+  async function login() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('email', email);
+      userEmail = email;
+      document.getElementById('userEmail').innerText = email;
+      alert('Login successful');
+      toggleSection('app');
+      loadGallery();
+    } else {
+      alert('Login failed');
+    }
+  }
+
+  async function uploadImage() {
+    const fileInput = document.getElementById('imageInput');
+    const formData = new FormData();
+    formData.append('image', fileInput.files[0]);
+
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/image/upload', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+
+    if (!res.ok) {
+      const text = await res.text();
+      if (text.includes('Only .jpg and .png files allowed')) {
+        alert('Upload failed: Only .jpg and .png files allowed');
+      } else {
+        alert('Upload failed');
+      }
+      fileInput.value = '';
+      return;
+    }
+
+    const data = await res.json();
+    alert(data.message);
+    fileInput.value = '';
+    loadGallery();
+  }
+
+  async function loadGallery() {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/image/gallery', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+
+    const data = await res.json();
+    const gallery = document.getElementById('gallery');
+    gallery.innerHTML = '';
+
+    for (const img of data.images) {
+      const imageRes = await fetch('/api/image/view/' + img.id, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const blob = await imageRes.blob();
+      const imgURL = URL.createObjectURL(blob);
+
+      const imgElem = document.createElement('img');
+      imgElem.src = imgURL;
+      imgElem.width = 200;
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn btn-sm btn-outline-danger mt-1';
+      deleteBtn.innerText = 'Delete';
+      deleteBtn.onclick = () => deleteImage(img.id);
+
+      const container = document.createElement('div');
+      container.className = 'd-flex flex-column align-items-center';
+      container.appendChild(imgElem);
+      container.appendChild(deleteBtn);
+      gallery.appendChild(container);
+    }
+  }
+
+  async function deleteImage(id) {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/image/delete/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+
+    if (!res.ok) {
+      alert('Delete failed');
+      return;
+    }
+
+    const data = await res.json();
+    alert(data.message);
+    loadGallery();
+  }
+
+  function logout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('email');
+    document.getElementById('imageInput').value = '';
+    alert('Logged out successfully');
+    toggleSection('login');
+    document.getElementById('gallery').innerHTML = '';
+  }
+</script>
+</body>
+</html>
